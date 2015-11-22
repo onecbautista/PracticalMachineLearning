@@ -1,0 +1,171 @@
+---
+title: "Practical Machine Learning Project"
+author: "Carlos Bautista"
+date: "Saturday, November 21, 2015"
+output: html_document
+---
+
+
+###Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+
+###Goal
+The goal of this project is to predict the manner in which the participants did the exercise. This is the "classe" variable in the training set. The following report illustrates how I built my model, how I used cross validation, what I think the expected out of sample error is, and why I made the choices I did. 
+
+
+###Install the following packages
+*Caret
+*ggplot2
+*rpart
+*randomForest
+
+
+###Getting Data
+The data for this project came from this source: http://groupware.les.inf.puc-rio.br/har. The data contains empty fields and errors which I will replace with "NA" to allow for further analysis.
+
+```{r, echo=TRUE}
+
+Url_train <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+Url_test <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train <- read.csv(url(Url_train), na.strings=c("NA","#DIV/0!",""))
+test <- read.csv(url(Url_test), na.strings=c("NA","#DIV/0!",""))
+
+```
+
+###Partitioning the Training Data
+Based on prediction study design it is recommended that the training dataset to be partitioned to 60% training and 40% testing.
+
+
+```{r, echo=TRUE}
+library(caret)
+
+inTrain <- createDataPartition(y=train$classe, p=0.6, list =FALSE)
+training <- train[inTrain,]
+testing <- train[-inTrain,]
+
+dim(training)
+dim(testing)
+
+```
+
+###Data Cleansing
+This process will remove variables that have no variability in them using the nearZeroVAR function. Out of 160 variables, the nearZeroVAR removed 28 variables. Also, remove the first column of the training data set. To make the machine learning algorithm interpretable, simple, and fast the process will also remove 70% NA. The process, also, matches training column names with testing and test column names. 
+
+
+```{r, echo=TRUE}
+library(caret)
+
+nzv <- nearZeroVar(training, saveMetrics=TRUE)
+training <- training[,nzv$nzv==FALSE]
+
+nzv<- nearZeroVar(testing,saveMetrics=TRUE)
+testing <- testing[,nzv$nzv==FALSE]
+
+training <- training[c(-1)]
+
+training1 <- training
+for(i in 1:length(training)) {
+    if( sum( is.na( training[, i] ) ) /nrow(training) >= .7) {
+        for(j in 1:length(training1)) {
+            if( length( grep(names(training[i]), names(training1)[j]) ) == 1)  {
+                training1 <- training1[ , -j]
+            }   
+        } 
+    }
+}
+
+training <- training1
+
+
+#Match training column names with testing and test column names
+cleanColName <- colnames(training)
+cleanColNameClasse  <- colnames(training[, -58])  
+
+testing <- testing[cleanColName]           
+test <- test[cleanColNameClasse] 
+
+dim(training); dim(testing); dim(test)
+
+#Data like data = class = class for both data sets
+for (i in 1:length(test) ) {
+    for(j in 1:length(training)) {
+        if( length( grep(names(training[i]), names(test)[j]) ) == 1)  {
+            class(test[j]) <- class(training[i])
+        }      
+    }      
+}
+
+# To get the same class between testing and myTraining
+test <- rbind(training[2, -58] , test)
+test <- test[-1,]
+
+
+
+```
+
+###Machine Learning Algorithms
+This process will evaluate two predictive algorithms; Decision Trees and Random Forrests. 
+####First model: Decision Tree. 
+
+
+```{r, echo=TRUE}
+library(rpart)
+library(rattle)
+
+
+set.seed(54321)
+
+
+modelFit <- rpart(classe ~ ., data=training, method="class")
+fancyRpartPlot(modelFit)
+
+predictions <- predict(modelFit, testing, type = "class")
+CMdt <- confusionMatrix(predictions, testing$classe)
+CMdt
+
+
+
+```
+
+####Second model: Random Forests
+
+```{r, echo=TRUE}
+
+library(randomForest)
+set.seed(23456)
+modFit <- randomForest(classe ~ ., data=training)
+
+prediction <- predict(modFit, testing, type = "class")
+CMrf <- confusionMatrix(prediction, testing$classe)
+CMrf
+
+```
+
+###Predicting Results on Test Data
+
+Applying Random Forrests which gave an accuracy of 99.77% and out of sample error of 0.23% versus Decision Trees accuracy of 85.07% and out of sample error of 14.93%, the following are the predictions to the test data set. 
+
+```{r, echo=TRUE}
+
+library(caret)
+
+
+predictRF <- predict(modFit, test, type = "class")
+predictRF
+
+
+#Write the results to a text file for submission
+pml_write_files = function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+}
+
+#pml_write_files(predictRF)
+
+```
+
